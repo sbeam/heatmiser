@@ -119,13 +119,13 @@ func main() {
 
 	resp := dial(cmd)
 
-	fmt.Println(fmt.Sprintf("%s", resp))
+	log.Println(fmt.Sprintf("%s", resp))
 
 	result, err := publish(resp, cmd)
 
 	if err != nil {
-		fmt.Println("error." + err.Error())
+		log.Fatal(err)
 	} else {
-		fmt.Println("status: " + result)
+		log.Println("status: " + result)
 	}
 }

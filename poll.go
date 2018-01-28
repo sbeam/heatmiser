@@ -5,7 +5,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
-	// "crypto/x509"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	certFile  = flag.String("cert", "", "A PEM			eoncoded certificate file.")
-	keyFile   = flag.String("key", "", "A PEM encoded private key file.")
-	caFile    = flag.String("CA", "/path/ca_cert.pem", "A PEM eoncoded CA's certificate file.")
-	rpcServer = flag.String("rpc", "host:port", "TCP location of CGMiner RPC in host:port format")
-	endpoint  = flag.String("endpoint", "https://xyz.iot.us-east-1.amazonaws.com:8443", "AWS IoT API endpoint")
+	certFile  = flag.String("cert", "", "Path to a PEM encoded certificate file.")
+	keyFile   = flag.String("key", "", "Path to a PEM encoded private key file.")
+	caFile    = flag.String("CA", "", "Path to a PEM encoded CA's certificate file.")
+	rpcServer = flag.String("rpc", "", "location of CGMiner RPC server over TCP [host:port]")
+	endpoint  = flag.String("endpoint", "", "AWS IoT API endpoint [https://host:port]")
 )
 
 func dial(command string) []byte {
@@ -44,6 +44,8 @@ func dial(command string) []byte {
 
 func client() *http.Client {
 	var client *http.Client
+	var tlsConfig *tls.Config
+
 	// Setup HTTPS client
 	if *certFile != "" && *keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
@@ -51,11 +53,26 @@ func client() *http.Client {
 			log.Fatal(err)
 		}
 
-		tlsConfig := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			// RootCAs:      caCertPool,
+		// Load CA cert
+		if *caFile != "" {
+			caCert, err := ioutil.ReadFile(*caFile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsConfig = &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				RootCAs:      caCertPool,
+			}
+		} else {
+			tlsConfig = &tls.Config{
+				Certificates: []tls.Certificate{cert},
+			}
 		}
+
 		tlsConfig.BuildNameToCertificate()
+
 		transport := &http.Transport{TLSClientConfig: tlsConfig}
 		client = &http.Client{Transport: transport}
 	} else {
@@ -65,6 +82,9 @@ func client() *http.Client {
 }
 
 func publish(body []byte, topic string) (string, error) {
+	if *endpoint == "" {
+		log.Fatal("API recieving endpoint must be set with --endpoint")
+	}
 	// set up a POST request
 	url := fmt.Sprintf("%s/topics/mining/%s?qos=1", *endpoint, topic)
 
@@ -89,11 +109,10 @@ func publish(body []byte, topic string) (string, error) {
 
 func main() {
 	flag.Parse()
-	args := flag.Args()
 
 	var cmd string
-	if len(args) > 0 {
-		cmd = args[0]
+	if flag.NArg() > 0 {
+		cmd = flag.Args()[0]
 	} else {
 		cmd = "summary"
 	}
